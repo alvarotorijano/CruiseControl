@@ -1,20 +1,26 @@
-#include <Arduino.h>
-#include "../include/config.h"
-#include <SPI.h>
-#include "../lib/TFT_eSPI/TFT_eSPI.h"
-#include "../lib/Adafruit_TouchScreen/TouchScreen.h"
+/* 
+Test MCU Friend parallel display and resistive touchscreen by drawing touch points
+on screen, use something pointed for more accuracy
 
+Need this modified Touchscreen library and one of:
+- TFT_eSPI        much faster for ESP32, must select correct display driver 
+- MCUFRIEND_kbv   more display driver support, auto detects display driver
+ */
 
-TFT_eSPI tft = TFT_eSPI();       // Invoke custom library
+#define TFT_eSPIlib  // comment out to use MCUFRIEND_kbv
 
-#ifdef ILI9486_DRIVER
-const int XP = TFT_D6, XM = TFT_DC, YP = TFT_WR, YM = TFT_D7;
-#else 
-const int XP = TFT_D0, XM = TFT_DC, YP = TFT_CS, YM = TFT_D1;
+#ifdef TFT_eSPIlib
+#include <TFT_eSPI.h>
+TFT_eSPI tft = TFT_eSPI();
+#else
+#include <MCUFRIEND_kbv.h> 
+MCUFRIEND_kbv tft;
 #endif
-TouchScreen ts = TouchScreen(XP, YP, XM, YM, 30);
 
-#define MINPRESSURE 2
+#include <TouchScreen.h>
+
+// adjust pressure sensitivity - note works 'backwards'
+#define MINPRESSURE 200
 #define MAXPRESSURE 1000
 
 // some colours to play with
@@ -35,34 +41,56 @@ TouchScreen ts = TouchScreen(XP, YP, XM, YM, 30);
 // each library and driver may have different coordination and rotation sequence
 const int coords[] = {3800, 500, 300, 3800}; // portrait - left, right, top, bottom
 
-boolean Touch_getXY(uint16_t *x, uint16_t *y, boolean showTouch);
+const int rotation = 0; //  in rotation order - portrait, landscape, etc
 
-void setup(void) {
-  Serial.begin(USB_SERIAL_BAUDRATE);
-  tft.begin();
-  tft.setRotation(SCREEN_ROTATION);
-  tft.fillScreen(TFT_BLACK);
-  tft.drawRect(10, 50, 20, 100, TFT_WHITE);
-  tft.fillRectVGradient(10, 50, 20, 100, TFT_BLUE, TFT_RED);
+const int XP = 27, XM = 15, YP = 4, YM = 14; // default ESP32 Uno touchscreen pins
+TouchScreen ts = TouchScreen(XP, YP, XM, YM, 300);
+
+void setup() {
+    Serial.begin(115200);
+#ifdef TFT_eSPIlib
+    Serial.println("TFT_eSPI library");
+    tft.begin();
+#else
+    Serial.println("MCUFRIEND_kbv library");
+    idDisplay();
+#endif
+    // screen orientation and background
+    String orientation;
+    switch (rotation) {
+      case 0: 
+        orientation = "Portrait";
+      break;
+      case 1: 
+        orientation = "Landscape";
+      break;
+      case 2: 
+        orientation = "Portrait Inverted";
+      break;
+      case 3: 
+        orientation = "Landscape Inverted";
+      break;
+    }
+    Serial.println(orientation);
+    tft.setRotation(rotation);  
+    tft.fillScreen(BLACK);
 }
 
 void loop() {
     // display touched point with colored dot
     uint16_t pixel_x, pixel_y;    
     boolean pressed = Touch_getXY(&pixel_x, &pixel_y, true);
-    Serial.println(pressed);
 }
 
 boolean Touch_getXY(uint16_t *x, uint16_t *y, boolean showTouch) {
-    TSPoint p;
-    p = ts.getPoint();
+    TSPoint p = ts.getPoint();
     pinMode(YP, OUTPUT);      //restore shared pins
     pinMode(XM, OUTPUT);
     digitalWrite(YP, HIGH);   //because TFT control pins
     digitalWrite(XM, HIGH);
     bool pressed = (p.z > MINPRESSURE && p.z < MAXPRESSURE);
     if (pressed) {
-      switch (SCREEN_ROTATION) {
+      switch (rotation) {
         case 0: // portrait
           *x = map(p.x, coords[0], coords[1], 0, tft.width()); 
           *y = map(p.y, coords[2], coords[3], 0, tft.height());
@@ -84,3 +112,15 @@ boolean Touch_getXY(uint16_t *x, uint16_t *y, boolean showTouch) {
     }
     return pressed;
 }
+
+#ifndef TFT_eSPIlib
+void idDisplay() {
+    // MCUFRIEND_kbv library only
+    uint16_t ID = tft.readID();
+    Serial.print("TFT ID = 0x");
+    Serial.println(ID, HEX);
+    if (ID == 0xD3D3) ID = 0x9486; // write-only shield
+    tft.begin(ID);
+}
+#endif
+
