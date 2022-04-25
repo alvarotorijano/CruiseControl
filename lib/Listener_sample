@@ -1,0 +1,84 @@
+#include <functional>
+#include <list>
+
+template<class ...Args>
+class Listener{
+public:
+    using Callback = std::function<void(Args...)>;
+private:
+    std::list<Callback> callback_list;
+public:
+    inline void add_slot(const Callback& callback);
+    inline void send_signal(Args ...args) const;
+};
+
+template<class ...Args>
+inline void Listener<Args...>::add_slot(const Callback& callback){
+    callback_list.emplace_back(callback);
+}
+
+template<class ...Args>
+inline void Listener<Args...>::send_signal(Args ...args) const{
+    for(const auto &callback : callback_list){
+        callback(args...);
+    }
+}
+
+#include <iostream>
+
+void foo(const int a){
+    std::cout << "foo: " << a << "\n";
+}
+
+void bar(const int a){
+    std::cout << "bar: " << a << "\n";
+}
+
+class AbstractSlider{
+private:
+    Listener<const int> value_listener;
+    void value_changed(){
+        value_listener.send_signal(val);
+    }
+private:
+    int val;
+public:
+    void paint_value(const int new_val){
+        ///
+    }
+    void set_value(const int new_val){
+        val = new_value;
+        value_changed();
+    }
+    int get_value(){
+        return val;
+    }
+    void on_value_chage(const decltype(value_listener)::Callback &callback){
+        value_listener.add_slot(callback)
+    }
+};
+
+void set_furgo_speed(const int speed){
+    // ...
+}
+
+class AbstractButton{
+private:
+    Listener<> pressed_listener;
+    void pressed(){
+        pressed_listener.send_signal();
+    }
+}
+
+int main(){
+    VerticalSlider speed_slider;
+    speed_slider.on_value_chage(set_furgo_speed);
+    // on speed slider value change, set furgo speed
+
+
+    Listener<const int> listener;
+    listener.add_slot(foo);
+    listener.add_slot(bar);
+    listener.send_signal(1);
+    listener.send_signal(2);
+}
